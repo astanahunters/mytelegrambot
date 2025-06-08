@@ -1,0 +1,12 @@
+# секретные файлы
+*.json
+# python cache & logs
+__pycache__/
+*.pyc
+backups/
+*.log
+# IDE файлы
+.vscode/
+.idea/
+# остальное
+остальное/
