@@ -21,7 +21,8 @@ from google.oauth2.service_account import Credentials
 
 # --- Конфигурация ---
 TOKEN = os.getenv('BOT_TOKEN', '7824358394:AAFQ9Kz4G760C4qU_4NYyRgc9IOfs7qN3NA')  # Рекомендуется хранить в переменных окружения
-GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_CREDENTIALS.json")
+GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_CREDENTIALS.json").strip()
+print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
 SPREADSHEET_NAME = 'astanahunters_template'  # Название вашей таблицы
 
 # --- Google Sheets подключение ---
