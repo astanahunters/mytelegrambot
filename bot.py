@@ -4,6 +4,7 @@
 
 import logging
 import os
+print("GOOGLE_CREDENTIALS =", os.environ.get("GOOGLE_CREDENTIALS"))
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
@@ -20,7 +21,7 @@ from google.oauth2.service_account import Credentials
 
 # --- Конфигурация ---
 TOKEN = os.getenv('BOT_TOKEN', '7824358394:AAFQ9Kz4G760C4qU_4NYyRgc9IOfs7qN3NA')  # Рекомендуется хранить в переменных окружения
-GOOGLE_CREDENTIALS = r'E:\mytelegrambot\disco-name-461817-u9-ea6b0de6a23d.json'  # Путь к JSON-ключу
+GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_CREDENTIALS.json")
 SPREADSHEET_NAME = 'astanahunters_template'  # Название вашей таблицы
 
 # --- Google Sheets подключение ---
