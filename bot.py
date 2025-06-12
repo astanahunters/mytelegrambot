@@ -9,9 +9,16 @@ import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.filters import CommandStart, Command, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.types import Message
+from aiogram.filters import CommandStart, Command
+from aiogram.types import (
+    Message,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from aiogram.fsm.storage.memory import MemoryStorage
+
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -66,15 +73,23 @@ def update_user_score(user_id: int, delta: int, reason: str):
             return new_score
     return None
 
+# Получить номер столбца по заголовку (для invited)
+def get_col_idx_by_name(ws, col_name):
+    headers = ws.row_values(1)
+    for idx, name in enumerate(headers):
+        if name.strip().lower() == col_name.strip().lower():
+            return idx + 1
+    return None
+
 # --- Авторассылка приглашений verified пользователям ---
 async def auto_invite_verified_users():
     records = users_ws.get_all_records()
+    invited_col = get_col_idx_by_name(users_ws, 'invited')
     for idx, rec in enumerate(records):
-        # Проверяем: статус verified и приглашение ещё не отправлено
         if rec['статус'].strip().lower() == 'verified' and not rec.get('invited'):
             try:
                 await bot.send_message(rec['ID'], f"✅ Вы верифицированы!\nВступите в закрытый чат: {INVITE_LINK}")
-                users_ws.update_cell(idx + 2, len(rec) + 1, 'yes')  # Столбец invited
+                users_ws.update_cell(idx + 2, invited_col, 'yes')
                 logging.info(f"Приглашение отправлено: {rec['ID']}")
             except Exception as e:
                 logging.error(f"Ошибка при отправке приглашения {rec['ID']}: {e}")
@@ -91,7 +106,6 @@ async def start_cmd(message: Message):
         else:
             await message.answer('Вы уже отправили номер. Ожидайте проверки.')
     else:
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         reply_kb = ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
             resize_keyboard=True,
@@ -106,13 +120,12 @@ async def start_cmd(message: Message):
 async def process_contact(message: Message):
     contact = message.contact
     users_ws.append_row([
-        contact.user_id, contact.first_name, contact.phone_number, 'waiting', 20, datetime.now().isoformat(), ''
+        contact.user_id, contact.first_name, contact.phone_number, 'waiting', 20, datetime.now().isoformat(), '', ''
     ])
     await message.answer('Спасибо, ваш номер отправлен на проверку администратору.')
 
 async def ask_post_info(message: Message):
     await message.answer('Загрузите фото объекта:')
-
 
 @dp.message(Command('rules'))
 async def send_rules(message: types.Message):
@@ -127,10 +140,9 @@ async def send_rules(message: types.Message):
 @dp.callback_query(F.data == "accept_rules")
 async def process_accept_rules(callback: types.CallbackQuery):
     user_id = callback.from_user.id
-    # Сохрани в Google Sheets или базе, что user_id ознакомился
+    # TODO: Сохрани в Google Sheets или базе, что user_id ознакомился
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer("Спасибо! Вы ознакомились с правилами и получили доступ к чату.")
-
 
 @dp.message(F.photo)
 async def handle_photo(message: Message):
@@ -145,12 +157,12 @@ async def show_cabinet(message: Message):
     user = get_user_by_id(message.from_user.id)
     if user:
         await message.answer(
-            f'👤 Ваш профиль\nБаллы: <b>{user["баллы"]}</b>\nСтатус: {user["статус"]}\nЖалобы: {user["жалобы"]}'
+            f'👤 Ваш профиль\nБаллы: <b>{user["баллы"]}</b>\nСтатус: {user["статус"]}\nЖалобы: {user.get("жалобы","-")}'
         )
     else:
         await message.answer('Вы не зарегистрированы.')
 
-# 1. функция для генерации одноразовой ссылки
+# Генерация одноразовой ссылки
 async def generate_one_time_invite():
     try:
         invite_link = await bot.create_chat_invite_link(
@@ -162,7 +174,6 @@ async def generate_one_time_invite():
         logger.error(f"Ошибка при создании пригласительной ссылки: {e}")
         return None
 
-
 @dp.message(Command('approve'))
 async def approve_user(message: types.Message):
     if message.from_user.id != YOUR_ADMIN_ID:
@@ -172,7 +183,6 @@ async def approve_user(message: types.Message):
         user_id = int(message.text.split()[1])
         user = get_user_by_id(user_id)
         if user and user['статус'].strip().lower() == 'verified':
-            # Сгенерировать одноразовую ссылку
             invite_link = await generate_one_time_invite()
             if invite_link:
                 await bot.send_message(user_id, f"✅ Вы верифицированы!\nВступите в закрытый чат: {invite_link}")
@@ -184,7 +194,6 @@ async def approve_user(message: types.Message):
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
-
 @dp.message(Command('autoinvite'))
 async def autoinvite_command(message: types.Message):
     if message.from_user.id != YOUR_ADMIN_ID:
@@ -195,12 +204,11 @@ async def autoinvite_command(message: types.Message):
 
 # --- Запуск ---
 async def main():
-    # Можно автоматически запускать рассылку при старте (если хочешь)
-    # await auto_invite_verified_users()
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
+
 
 
 
