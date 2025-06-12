@@ -24,6 +24,7 @@ TOKEN = os.getenv('BOT_TOKEN', '7824358394:AAFQ9Kz4G760C4qU_4NYyRgc9IOfs7qN3NA')
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_CREDENTIALS.json").strip()
 print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
 SPREADSHEET_NAME = 'astanahunters_template'  # Название вашей таблицы
+PRIVATE_CHAT_ID = -1001234567890  # Заменить на свой chat_id закрытого чата
 
 # --- Google Sheets подключение ---
 SCOPES = [
@@ -69,6 +70,20 @@ def update_user_score(user_id: int, delta: int, reason: str):
             score_ws.append_row([user_id, reason, delta, types.datetime.datetime.now().isoformat(), 'auto'])
             return new_score
     return None
+
+# --- ВСТАВЬ СЮДА функцию ---
+async def send_invite_if_verified(user_id: int, status: str):
+    if status == "verified":
+        invite = await bot.create_chat_invite_link(
+            chat_id=PRIVATE_CHAT_ID,  # <- chat_id из переменной
+            member_limit=1
+        )
+        await bot.send_message(
+            user_id,
+            f"Ваша заявка одобрена! Вот ссылка: {invite.invite_link}\nСсылка работает только 1 раз."
+        )
+    else:
+        await bot.send_message(user_id, "Ваш номер не подтверждён.")
 
 # --- Команда /start ---
 @dp.message(CommandStart())
@@ -128,6 +143,16 @@ async def show_cabinet(message: Message):
         )
     else:
         await message.answer('Вы не зарегистрированы.')
+
+# --- ВСТАВЬ СЮДА хендлер ---
+@dp.message(Command("invite"))
+async def invite_user(message: Message):
+    user = get_user_by_id(message.from_user.id)
+    if user:
+        await send_invite_if_verified(message.from_user.id, user["статус"])
+    else:
+        await message.answer("Пользователь не найден.")
+
 
 # --- Ошибка: общий обработчик ---
 #@dp.errors()
