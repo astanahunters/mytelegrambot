@@ -21,7 +21,7 @@ TOKEN = os.getenv('BOT_TOKEN', '7824358394:AAFQ9Kz4G760C4qU_4NYyRgc9IOfs7qN3NA')
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_CREDENTIALS.json").strip()
 print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
 SPREADSHEET_NAME = 'astanahunters_template'
-PRIVATE_CHAT_ID = -1001234567890  # Заменить на свой chat_id закрытого чата
+PRIVATE_CHAT_ID = -1002635314764 # Заменить на свой chat_id закрытого чата
 INVITE_LINK = "https://t.me/+9A8m_E42s101MDJi"
 YOUR_ADMIN_ID = 7796929428
 
@@ -135,26 +135,24 @@ async def show_cabinet(message: Message):
 @dp.message(Command('approve'))
 async def approve_user(message: types.Message):
     if message.from_user.id != YOUR_ADMIN_ID:
-        await message.answer("Недостаточно прав для выполнения этой команды.")
+        await message.answer("Недостаточно прав.")
         return
-
     try:
         user_id = int(message.text.split()[1])
         user = get_user_by_id(user_id)
         if user and user['статус'].strip().lower() == 'verified':
-            # Генерируем одноразовую ссылку
-            invite = await bot.create_chat_invite_link(
-                chat_id=PRIVATE_CHAT_ID,
-                member_limit=1,  # Только один пользователь
-                creates_join_request=False
-            )
-            invite_link = invite.invite_link
-            await bot.send_message(user_id, f"✅ Вы верифицированы!\nВот ваша персональная ссылка для вступления в чат (она работает только один раз):\n{invite_link}")
-            await message.answer(f"Пользователь с ID {user_id} приглашён в чат (одноразовая ссылка создана).")
+            # Сгенерировать одноразовую ссылку
+            invite_link = await generate_one_time_invite()
+            if invite_link:
+                await bot.send_message(user_id, f"✅ Вы верифицированы!\nВступите в закрытый чат: {invite_link}")
+                await message.answer(f"Пользователь с ID {user_id} приглашён в чат.")
+            else:
+                await message.answer("Не удалось сгенерировать ссылку.")
         else:
             await message.answer("Пользователь не найден или не верифицирован.")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
+
 
 @dp.message(Command('autoinvite'))
 async def autoinvite_command(message: types.Message):
