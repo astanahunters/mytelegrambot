@@ -142,9 +142,15 @@ async def approve_user(message: types.Message):
         user_id = int(message.text.split()[1])
         user = get_user_by_id(user_id)
         if user and user['статус'].strip().lower() == 'verified':
-            await bot.send_message(user_id, f"✅ Вы верифицированы!\nВступите в закрытый чат: {INVITE_LINK}")
-            await message.answer(f"Пользователь с ID {user_id} приглашён в чат.")
-            # Обновим столбец invited для этого пользователя (если нужен)
+            # Генерируем одноразовую ссылку
+            invite = await bot.create_chat_invite_link(
+                chat_id=PRIVATE_CHAT_ID,
+                member_limit=1,  # Только один пользователь
+                creates_join_request=False
+            )
+            invite_link = invite.invite_link
+            await bot.send_message(user_id, f"✅ Вы верифицированы!\nВот ваша персональная ссылка для вступления в чат (она работает только один раз):\n{invite_link}")
+            await message.answer(f"Пользователь с ID {user_id} приглашён в чат (одноразовая ссылка создана).")
         else:
             await message.answer("Пользователь не найден или не верифицирован.")
     except Exception as e:
