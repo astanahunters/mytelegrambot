@@ -132,6 +132,19 @@ async def show_cabinet(message: Message):
     else:
         await message.answer('Вы не зарегистрированы.')
 
+# 1. функция для генерации одноразовой ссылки
+async def generate_one_time_invite():
+    try:
+        invite_link = await bot.create_chat_invite_link(
+            chat_id=PRIVATE_CHAT_ID,
+            member_limit=1
+        )
+        return invite_link.invite_link
+    except Exception as e:
+        logger.error(f"Ошибка при создании пригласительной ссылки: {e}")
+        return None
+
+
 @dp.message(Command('approve'))
 async def approve_user(message: types.Message):
     if message.from_user.id != YOUR_ADMIN_ID:
