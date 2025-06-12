@@ -90,9 +90,15 @@ async def send_invite_if_verified(user_id: int, status: str):
 async def start_cmd(message: Message):
     user = get_user_by_id(message.from_user.id)
     if user:
-        await message.answer('Вы уже верифицированы. Для помощи используйте /help')
+        # Если уже верифицирован — отправить ссылку в чат
+        if user['статус/роль'] == 'verified':
+            await message.answer(
+                f'✅ Вы верифицированы! Вот ссылка для вступления в закрытый чат:\n{PRIVATE_CHAT_INVITE_LINK}'
+            )
+        else:
+            await message.answer('Вы уже верифицированы. Для помощи используйте /help')
     else:
-        # Ввод номера телефона (правильная ReplyKeyboard!)
+        # Ввод номера телефона
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         reply_kb = ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
@@ -101,7 +107,7 @@ async def start_cmd(message: Message):
         )
         await message.answer(
             'Добро пожаловать! Пожалуйста, подтвердите ваш рабочий телефон для доступа к чату.',
-            reply_markup=reply_kb
+            reply_markup=reply
         )
 
 # --- Обработка контакта (ввод телефона) ---
