@@ -22,7 +22,7 @@ GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_C
 print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
 SPREADSHEET_NAME = 'astanahunters_template'
 PRIVATE_CHAT_ID = -1002635314764 # Заменить на свой chat_id закрытого чата
-INVITE_LINK = "https://t.me/+9A8m_E42s101MDJi"
+INVITE_LINK = "https://t.me/xxxxxxxxxxx"
 YOUR_ADMIN_ID = 7796929428
 
 # --- Google Sheets подключение ---
