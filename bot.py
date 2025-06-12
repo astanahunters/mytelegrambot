@@ -12,7 +12,6 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart, Command, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types import Message
 from aiogram.fsm.storage.memory import MemoryStorage
-
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -113,6 +112,7 @@ async def process_contact(message: Message):
 
 async def ask_post_info(message: Message):
     await message.answer('Загрузите фото объекта:')
+
 
 @dp.message(Command('rules'))
 async def send_rules(message: types.Message):
