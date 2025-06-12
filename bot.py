@@ -4,7 +4,6 @@
 
 import logging
 import os
-print("GOOGLE_CREDENTIALS =", os.environ.get("GOOGLE_CREDENTIALS"))
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
