@@ -4,6 +4,7 @@
 
 import logging
 import os
+from datetime import datetime  # <-- добавь это!
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
@@ -94,7 +95,8 @@ async def process_contact(message: Message):
     contact = message.contact
     # TODO: Ручная проверка админом! Пока просто сохраняем
     users_ws.append_row([
-        contact.user_id, contact.first_name, contact.phone_number, 'waiting', 20, types.datetime.datetime.now().isoformat(), ''])
+        contact.user_id, contact.first_name, contact.phone_number, 'waiting', 20, datetime.now().isoformat(), ''
+    ])
     await message.answer('Спасибо, ваш номер отправлен на проверку администратору.')
 
 # --- Шаблон публикации объекта ---
@@ -128,12 +130,12 @@ async def show_cabinet(message: Message):
         await message.answer('Вы не зарегистрированы.')
 
 # --- Ошибка: общий обработчик ---
-@dp.errors()
-async def error_handler(update, exception):
-    logger.error(f"Ошибка: {exception} | update: {update}")
-    if isinstance(update, types.Message):
-        await update.answer("Произошла ошибка, команда уже знает!")
-    return True
+#@dp.errors()
+#async def error_handler(update, exception):
+#    logger.error(f"Ошибка: {exception} | update: {update}")
+#    if isinstance(update, types.Message):
+#        await update.answer("Произошла ошибка, команда уже знает!")
+#    return True
 
 # --- Запуск ---
 async def main():
