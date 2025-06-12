@@ -25,6 +25,8 @@ GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_C
 print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
 SPREADSHEET_NAME = 'astanahunters_template'  # Название вашей таблицы
 PRIVATE_CHAT_ID = -1001234567890  # Заменить на свой chat_id закрытого чата
+INVITE_LINK = "https://t.me/+9A8m_E42s101MDJi"
+YOUR_ADMIN_ID = 7796929428
 
 # --- Google Sheets подключение ---
 SCOPES = [
@@ -72,18 +74,11 @@ def update_user_score(user_id: int, delta: int, reason: str):
     return None
 
 # --- ВСТАВЬ СЮДА функцию ---
-async def send_invite_if_verified(user_id: int, status: str):
-    if status == "verified":
-        invite = await bot.create_chat_invite_link(
-            chat_id=PRIVATE_CHAT_ID,  # <- chat_id из переменной
-            member_limit=1
-        )
-        await bot.send_message(
-            user_id,
-            f"Ваша заявка одобрена! Вот ссылка: {invite.invite_link}\nСсылка работает только 1 раз."
-        )
-    else:
-        await bot.send_message(user_id, "Ваш номер не подтверждён.")
+async def invite_verified_user(user_id: int):
+    try:
+        await bot.send_message(user_id, f"✅ Вы верифицированы!\nВступите в закрытый чат: {INVITE_LINK}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке приглашения: {e}")
 
 # --- Команда /start ---
 @dp.message(CommandStart())
@@ -167,6 +162,27 @@ async def invite_user(message: Message):
 #    if isinstance(update, types.Message):
 #        await update.answer("Произошла ошибка, команда уже знает!")
 #    return True
+
+@dp.message(Command('approve'))
+async def approve_user(message: types.Message):
+    # Проверка, что команду отправил только админ
+    if message.from_user.id != YOUR_ADMIN_ID:
+        await message.answer("Недостаточно прав для выполнения этой команды.")
+        return
+
+    try:
+        # Получаем user_id из команды: /approve 123456789
+        user_id = int(message.text.split()[1])
+        user = get_user_by_id(user_id)
+        if user and user['статус/роль'].strip().lower() == 'verified':
+            await invite_verified_user(user_id)
+            await message.answer(f"Пользователь с ID {user_id} приглашён в чат.")
+        else:
+            await message.answer("Пользователь не найден или не верифицирован.")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
 
 # --- Запуск ---
 async def main():
