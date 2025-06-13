@@ -166,7 +166,7 @@ async def start_cmd(message: Message):
         )
 
 @dp.message(F.content_type == 'contact')
-async def process_contact(message: Message):(message: Message):
+async def process_contact(message: Message):
     if not is_private(message):
         return
     c = message.contact
