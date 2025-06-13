@@ -130,16 +130,22 @@ async def chat_member_update(event: ChatMemberUpdated):
 # --- /start ---
 @dp.message(CommandStart())
 async def start_cmd(msg: Message):
-    if not is_private(msg): return
+    if not is_private(msg):
+        return
     u = get_user_by_id(msg.from_user.id)
     if u:
         st = u.get('статус','').lower()
-        if st=='verified': return await send_one_time_invite(msg.from_user.id)
-        if st=='waiting': return await msg.answer("Вы вышли — обратитесь к администратору @astanahunters.")
+        if st=='verified':
+            return await send_one_time_invite(msg.from_user.id)
+        if st=='waiting':
+            return await msg.answer("Вы вышли — обратитесь к администратору @astanahunters.")
         return await msg.answer("Ждите проверки.")
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("📲 Поделиться номером", request_contact=True))
-    await msg.answer("Добро пожаловать!", reply_markup=kb)
+    # создаём клавиатуру с запросом контакта
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📲 Поделиться номером", request_contact=True)]],
+        resize_keyboard=True
+    )
+    await msg.answer("Добро пожаловать! Поделитесь номером телефона:", reply_markup=kb)
 
 # --- /post ---
 @dp.message(Command('post'))
