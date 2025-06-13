@@ -27,7 +27,8 @@ TOKEN = os.getenv('BOT_TOKEN', '7824358394:AAFQ9Kz4G760C4qU_4NYyRgc9IOfs7qN3NA')
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_CREDENTIALS.json").strip()
 print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
 SPREADSHEET_NAME = 'astanahunters_template'
-PRIVATE_CHAT_ID = -1002635314764 # Заменить на свой chat_id закрытого чата
+PRIVATE_CHAT_ID = -1002635314764  # Закрытый чат
+CHANNEL_ID = -1000000000000       # <-- укажи сюда свой канал! (где публикуются посты)
 INVITE_LINK = "Теперь вход платный! Пишите админу ЛС @astanahunters"
 YOUR_ADMIN_ID = 7796929428
 
@@ -54,6 +55,10 @@ bot = Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 dp = Dispatcher(storage=MemoryStorage())
+
+# --- Проверка: команда пришла из лички? ---
+def is_private(message: Message) -> bool:
+    return message.chat.type == 'private'
 
 # --- Вспомогательные функции ---
 def get_user_by_id(user_id: int):
@@ -94,9 +99,21 @@ async def auto_invite_verified_users():
             except Exception as e:
                 logging.error(f"Ошибка при отправке приглашения {rec['ID']}: {e}")
 
-# --- Команды ---
+# --- Автоудаление чужих команд в группе/чате (видят только авторы) ---
+@dp.message(F.text.startswith('/'))
+async def delete_commands_in_group(message: Message):
+    if message.chat.type != 'private':
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+# --- Команды (отвечают только в ЛС) ---
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
+    if not is_private(message):
+        await message.answer("⚠️ Пожалуйста, используйте команды в ЛИЧНЫХ СООБЩЕНИЯХ с ботом.")
+        return
     user = get_user_by_id(message.from_user.id)
     if user:
         if user['статус'].strip().lower() == 'verified':
@@ -118,6 +135,8 @@ async def start_cmd(message: Message):
 
 @dp.message(F.contact)
 async def process_contact(message: Message):
+    if not is_private(message):
+        return
     contact = message.contact
     users_ws.append_row([
         contact.user_id, contact.first_name, contact.phone_number, 'waiting', 20, datetime.now().isoformat(), '', ''
@@ -129,6 +148,9 @@ async def ask_post_info(message: Message):
 
 @dp.message(Command('rules'))
 async def send_rules(message: types.Message):
+    if not is_private(message):
+        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
+        return
     rules_text = "Тут текст правил...\n\nНажмите кнопку, если согласны:"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -144,16 +166,25 @@ async def process_accept_rules(callback: types.CallbackQuery):
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer("Спасибо! Вы ознакомились с правилами и получили доступ к чату.")
 
+# --- Только в личке — фото и публикация ---
 @dp.message(F.photo)
 async def handle_photo(message: Message):
+    if not is_private(message):
+        await message.answer("Пожалуйста, отправьте объект в личные сообщения боту.")
+        return
     user = get_user_by_id(message.from_user.id)
     if not user or user['статус'].strip().lower() != 'verified':
         await message.answer('Публикация доступна только верифицированным участникам.')
         return
     await message.answer('Введите короткое описание объекта (без номера и агентства):')
+    # После получения описания — публикуй в канал:
+    # await bot.send_photo(CHANNEL_ID, photo=message.photo[-1].file_id, caption="Описание") 
 
 @dp.message(Command('cabinet'))
 async def show_cabinet(message: Message):
+    if not is_private(message):
+        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
+        return
     user = get_user_by_id(message.from_user.id)
     if user:
         await message.answer(
@@ -176,6 +207,9 @@ async def generate_one_time_invite():
 
 @dp.message(Command('approve'))
 async def approve_user(message: types.Message):
+    if not is_private(message):
+        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
+        return
     if message.from_user.id != YOUR_ADMIN_ID:
         await message.answer("Недостаточно прав.")
         return
@@ -196,6 +230,9 @@ async def approve_user(message: types.Message):
 
 @dp.message(Command('autoinvite'))
 async def autoinvite_command(message: types.Message):
+    if not is_private(message):
+        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
+        return
     if message.from_user.id != YOUR_ADMIN_ID:
         await message.answer("Недостаточно прав для выполнения этой команды.")
         return
@@ -208,8 +245,6 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-
-
 
 
 
