@@ -2,52 +2,54 @@
 # Минимальная архитектура для закрытого чата и открытого канала, готовая к масштабированию
 # Интеграция с Google Sheets, баллы, публикации, жалобы, поддержка расширения
 
-import logging
+# main.py
 import os
-from datetime import datetime
+import logging
 import asyncio
+from datetime import datetime
+from pathlib import Path
+import contextlib
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
+    Message, ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardMarkup, InlineKeyboardButton
 )
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 
 import gspread
 from google.oauth2.service_account import Credentials
 
-# --- Конфигурация ---
-TOKEN = os.getenv('BOT_TOKEN', '7824358394:AAFQ9Kz4G760C4qU_4NYyRgc9IOfs7qN3NA')
-GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_CREDENTIALS.json").strip()
-print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
-SPREADSHEET_NAME = 'astanahunters_template'
-PRIVATE_CHAT_ID = -1002635314764  # Закрытый чат
-CHANNEL_ID = -1002643399672       # <-- сюда публикуются посты
-INVITE_LINK = "Теперь вход платный! Пишите админу ЛС @astanahunters"
-YOUR_ADMIN_ID = 7796929428
+# --- auto_cleaner integration ---
+import auto_cleaner
 
-# --- Google Sheets подключение ---
-SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive'
-]
-creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS, scopes=SCOPES)
-gc = gspread.authorize(creds)
-sh = gc.open(SPREADSHEET_NAME)
-users_ws = sh.worksheet('users')
-print('Sheet открыт!')
-posts_ws = sh.worksheet('posts')
-complaints_ws = sh.worksheet('complaints')
-score_ws = sh.worksheet('score_history')
-leads_ws = sh.worksheet('leads')
+# --- 1. Конфигурация и логирование ---
+PROJECT_DIR       = Path(__file__).resolve().parent
+MAIN_FILE         = PROJECT_DIR / "main.py"
+CHANGELOG         = PROJECT_DIR / "changelog.md"
+BACKUP_DIR        = PROJECT_DIR / "backups"; BACKUP_DIR.mkdir(exist_ok=True)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+# Основные переменные из .env
+TOKEN             = os.getenv('BOT_TOKEN')
+GOOGLE_CREDENTIALS= os.getenv('GOOGLE_CREDENTIALS').strip()
+SPREADSHEET_NAME  = os.getenv('SPREADSHEET_NAME')
+PRIVATE_CHAT_ID   = int(os.getenv('PRIVATE_CHAT_ID'))
+CHANNEL_ID        = int(os.getenv('CHANNEL_ID'))
+YOUR_ADMIN_ID     = int(os.getenv('YOUR_ADMIN_ID'))
+
+# Переменные для авто-чистки
+CLEANER_ADMIN_ID  = YOUR_ADMIN_ID  # единый админ
+CONFIRM_TIMEOUT   = int(os.getenv('CONFIRM_TIMEOUT', 3600))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 bot = Bot(
@@ -56,211 +58,186 @@ bot = Bot(
 )
 dp = Dispatcher(storage=MemoryStorage())
 
-# --- Проверка: команда пришла из лички? ---
-def is_private(message: Message) -> bool:
-    return message.chat.type == 'private'
+# --- 2. Google Sheets подключение ---
+SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
+creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS, scopes=SCOPES)
+gc = gspread.authorize(creds)
+sh = gc.open(SPREADSHEET_NAME)
+users_ws      = sh.worksheet('users')
+posts_ws      = sh.worksheet('posts')
+complaints_ws = sh.worksheet('complaints')
+score_ws      = sh.worksheet('score_history')
+leads_ws      = sh.worksheet('leads')
+logger.info('✅ Google Sheet открыт!')
 
-# --- Вспомогательные функции ---
+# --- 3. Утилиты для таблицы ---
 def get_user_by_id(user_id: int):
-    records = users_ws.get_all_records()
-    for rec in records:
-        if str(rec['ID']) == str(user_id):
+    for rec in users_ws.get_all_records():
+        if str(rec.get('ID') or rec.get('user_id')) == str(user_id):
             return rec
     return None
 
+
+def get_col_idx_by_name(ws, col_name: str):
+    headers = ws.row_values(1)
+    for idx, name in enumerate(headers, start=1):
+        if name.strip().lower() == col_name.strip().lower():
+            return idx
+    return None
+
+
 def update_user_score(user_id: int, delta: int, reason: str):
     records = users_ws.get_all_records()
-    for idx, rec in enumerate(records):
-        if str(rec['ID']) == str(user_id):
-            new_score = int(rec['баллы']) + delta
-            users_ws.update_cell(idx + 2, 5, new_score)  # Столбец баллы (5)
-            score_ws.append_row([user_id, reason, delta, datetime.now().isoformat(), 'auto'])
-            return new_score
+    for idx, rec in enumerate(records, start=2):
+        if str(rec.get('ID') or rec.get('user_id')) == str(user_id):
+            col = get_col_idx_by_name(users_ws, 'баллы') or get_col_idx_by_name(users_ws, 'score')
+            new = int(rec.get('баллы', rec.get('score', 0))) + delta
+            users_ws.update_cell(idx, col, new)
+            score_ws.append_row([user_id, reason, delta, datetime.utcnow().isoformat(), 'auto'])
+            return new
     return None
 
-# Получить номер столбца по заголовку (для invited)
-def get_col_idx_by_name(ws, col_name):
-    headers = ws.row_values(1)
-    for idx, name in enumerate(headers):
-        if name.strip().lower() == col_name.strip().lower():
-            return idx + 1
-    return None
 
-# --- Авторассылка приглашений verified пользователям ---
 async def auto_invite_verified_users():
     records = users_ws.get_all_records()
-    invited_col = get_col_idx_by_name(users_ws, 'invited')
-    for idx, rec in enumerate(records):
-        if rec['статус'].strip().lower() == 'verified' and not rec.get('invited'):
-            try:
-                await bot.send_message(rec['ID'], f"✅ Вы верифицированы!\nВступите в закрытый чат: {INVITE_LINK}")
-                users_ws.update_cell(idx + 2, invited_col, 'yes')
-                logging.info(f"Приглашение отправлено: {rec['ID']}")
-            except Exception as e:
-                logging.error(f"Ошибка при отправке приглашения {rec['ID']}: {e}")
+    inv_col = get_col_idx_by_name(users_ws, 'invited')
+    status_col = get_col_idx_by_name(users_ws, 'status') or get_col_idx_by_name(users_ws, 'verified')
+    for i, rec in enumerate(records, start=2):
+        if rec.get('status','').strip().lower()=='verified' and rec.get('invited','').strip().lower()!='yes':
+            link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
+            # Исправлено: f-string на одной строке
+            await bot.send_message(rec['ID'], f"✅ Верификация пройдена! Вступайте: {link.invite_link}")
+            users_ws.update_cell(i, inv_col, 'yes')
 
-# --- Автоудаление команд и любых сообщений в группе/канале ---
-@dp.message(F.text.startswith('/'))
-async def delete_commands_in_group(message: Message):
-    if not is_private(message):
-        try:
-            await message.delete()
-        except Exception:
-            pass
+# --- 4. FSM для публикаций ---
+class PostStates(StatesGroup):
+    waiting_photo = State()
+    waiting_desc  = State()
 
-@dp.message(F.text)
-async def delete_messages_in_group(message: Message):
-    if not is_private(message):
-        try:
-            await message.delete()
-        except Exception:
-            pass
+# --- 5. Проверка ЛС ---
+def is_private(m: Message) -> bool:
+    return m.chat.type == 'private'
 
-@dp.message(F.photo)
-async def delete_photos_in_group(message: Message):
-    if not is_private(message):
-        try:
-            await message.delete()
-        except Exception:
-            pass
-
-# --- Команды (отвечают только в ЛС) ---
+# --- 6. Хендлеры ---
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
-    if not is_private(message):
-        return
-    try:
-        user = get_user_by_id(message.from_user.id)
-        if user:
-            if user['статус'].strip().lower() == 'verified':
-                await message.answer(
-                    f'✅ Вы верифицированы! Вот ссылка для вступления в закрытый чат:\n{INVITE_LINK}'
-                )
-            else:
-                await message.answer('Вы уже отправили номер. Ожидайте проверки.')
-        else:
-            reply_kb = ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
-                resize_keyboard=True,
-                one_time_keyboard=True
-            )
-            await message.answer(
-                'Добро пожаловать! Пожалуйста, подтвердите ваш рабочий телефон для доступа к чату.',
-                reply_markup=reply_kb
-            )
-    except Exception as e:
-        await message.answer(f"Произошла ошибка: {e}")
-
-@dp.message(F.contact)
-async def process_contact(message: Message):
-    if not is_private(message):
-        return
-    contact = message.contact
-    users_ws.append_row([
-        contact.user_id, contact.first_name, contact.phone_number, 'waiting', 20, datetime.now().isoformat(), '', ''
-    ])
-    await message.answer('Спасибо, ваш номер отправлен на проверку администратору.')
-
-@dp.message(Command('rules'))
-async def send_rules(message: types.Message):
-    if not is_private(message):
-        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
-        return
-    rules_text = "Тут текст правил...\n\nНажмите кнопку, если согласны:"
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Ознакомился", callback_data="accept_rules")]
-        ]
-    )
-    await message.answer(rules_text, reply_markup=keyboard)
-
-@dp.callback_query(F.data == "accept_rules")
-async def process_accept_rules(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    # TODO: Сохрани в Google Sheets или базе, что user_id ознакомился
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer("Спасибо! Вы ознакомились с правилами и получили доступ к чату.")
-
-# --- Публикация фото объекта: только в ЛС! Публикуется в канал ---
-@dp.message(F.photo)
-async def handle_photo(message: Message):
-    if not is_private(message):
-        return
-    user = get_user_by_id(message.from_user.id)
-    if not user or user['статус'].strip().lower() != 'verified':
-        await message.answer('Публикация доступна только верифицированным участникам.')
-        return
-    await message.answer('Введите короткое описание объекта (без номера и агентства):')
-    # Здесь можно реализовать FSM: ожидание следующего сообщения для публикации в канал
-
-    # Пример публикации фото в канал (раскомментируй после добавления FSM для описания):
-    # await bot.send_photo(CHANNEL_ID, photo=message.photo[-1].file_id, caption="Описание")
-
-@dp.message(Command('cabinet'))
-async def show_cabinet(message: Message):
-    if not is_private(message):
-        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
-        return
+    if not is_private(message): return
     user = get_user_by_id(message.from_user.id)
     if user:
-        await message.answer(
-            f'👤 Ваш профиль\nБаллы: <b>{user["баллы"]}</b>\nСтатус: {user["статус"]}\nЖалобы: {user.get("жалобы","-")}'
-        )
+        if user.get('status','').strip().lower()=='verified':
+            link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
+            await message.answer(f"✅ Вы верифицированы!\n{link.invite_link}")
+        else:
+            await message.answer("Ждите проверки.")
     else:
-        await message.answer('Вы не зарегистрированы.')
+        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        kb.add(KeyboardButton("📲 Поделиться номером", request_contact=True))
+        await message.answer("Поделитесь номером:", reply_markup=kb)
 
-# Генерация одноразовой ссылки
-async def generate_one_time_invite():
-    try:
-        invite_link = await bot.create_chat_invite_link(
-            chat_id=PRIVATE_CHAT_ID,
-            member_limit=1
-        )
-        return invite_link.invite_link
-    except Exception as e:
-        logger.error(f"Ошибка при создании пригласительной ссылки: {e}")
-        return None
+
+@dp.message(F.content_type=='contact')
+async def process_contact(message: Message):
+    if not is_private(message): return
+    c = message.contact
+    users_ws.append_row([c.user_id, c.phone_number, 'waiting', 'no', 0, datetime.utcnow().isoformat()])
+    await message.answer("Номер отправлен на проверку.")
+
+
+@dp.message(Command('rules'))
+async def send_rules(message: Message):
+    if not is_private(message): return await message.answer("Команда в ЛС.")
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("✅ Ознакомился", callback_data="accept_rules"))
+    await message.answer("📜 Правила...", reply_markup=kb)
+
+
+@dp.callback_query(F.data=="accept_rules")
+async def accept_rules(cb: types.CallbackQuery):
+    await cb.message.edit_reply_markup(None)
+    link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
+    idx = users_ws.find(str(cb.from_user.id)).row
+    users_ws.update_cell(idx, get_col_idx_by_name(users_ws,'invited'), 'yes')
+    await cb.message.answer(f"✅ Добро пожаловать!\n{link.invite_link}")
+
+
+@dp.message(F.chat.id==PRIVATE_CHAT_ID)
+async def delete_in_private_chat(msg: Message):
+    with contextlib.suppress(Exception):
+        await msg.delete()
+
+
+@dp.message(Command('newpost'))
+async def cmd_newpost(msg: Message, state: FSMContext):
+    if not is_private(msg): return
+    u = get_user_by_id(msg.from_user.id)
+    if not u or u.get('status','').strip().lower()!='verified':
+        return await msg.answer("Только для verified.")
+    await msg.answer("Пришлите фото.")
+    await state.set_state(PostStates.waiting_photo)
+
+
+@dp.message(PostStates.waiting_photo, F.photo)
+async def got_photo(msg: Message, state: FSMContext):
+    await state.update_data(photo=msg.photo[-1].file_id)
+    await msg.answer("Теперь описание:")
+    await state.set_state(PostStates.waiting_desc)
+
+
+@dp.message(PostStates.waiting_desc)
+async def got_desc(msg: Message, state: FSMContext):
+    data = await state.get_data()
+    await bot.send_photo(chat_id=CHANNEL_ID, photo=data['photo'], caption=msg.text)
+    posts_ws.append_row([msg.from_user.id, msg.text, datetime.utcnow().isoformat()])
+    update_user_score(msg.from_user.id, +10, 'post')
+    await msg.answer("Опубликовано.")
+    await state.clear()
+
+
+@dp.message(Command('cabinet'))
+async def show_cabinet(msg: Message):
+    if not is_private(msg): return
+    u = get_user_by_id(msg.from_user.id)
+    if not u: return await msg.answer("Не зарегистрированы.")
+    score = u.get('score') or u.get('баллы',0)
+    text = f"👤 Рейтинг: <b>{score}</b>\n"
+    await msg.answer(text)
+
 
 @dp.message(Command('approve'))
-async def approve_user(message: types.Message):
-    if not is_private(message):
-        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
-        return
-    if message.from_user.id != YOUR_ADMIN_ID:
-        await message.answer("Недостаточно прав.")
-        return
-    try:
-        user_id = int(message.text.split()[1])
-        user = get_user_by_id(user_id)
-        if user and user['статус'].strip().lower() == 'verified':
-            invite_link = await generate_one_time_invite()
-            if invite_link:
-                await bot.send_message(user_id, f"✅ Вы верифицированы!\nВступите в закрытый чат: {invite_link}")
-                await message.answer(f"Пользователь с ID {user_id} приглашён в чат.")
-            else:
-                await message.answer("Не удалось сгенерировать ссылку.")
-        else:
-            await message.answer("Пользователь не найден или не верифицирован.")
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
+async def approve_user(message: Message):
+    if not is_private(message): return
+    if message.from_user.id!=YOUR_ADMIN_ID: return
+    parts=message.text.split()
+    if len(parts)!=2: return await message.answer("/approve <id>")
+    uid=int(parts[1]); row=users_ws.find(str(uid)).row
+    users_ws.update_cell(row, get_col_idx_by_name(users_ws,'status'),'verified')
+    link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
+    users_ws.update_cell(row, get_col_idx_by_name(users_ws,'invited'),'yes')
+    await bot.send_message(uid, f"✅ Verified!\n{link.invite_link}")
+    await message.answer(f"Пользователь {uid} приглашён.")
+
 
 @dp.message(Command('autoinvite'))
-async def autoinvite_command(message: types.Message):
-    if not is_private(message):
-        await message.answer("⚠️ Используйте эту команду в личке с ботом.")
-        return
-    if message.from_user.id != YOUR_ADMIN_ID:
-        await message.answer("Недостаточно прав для выполнения этой команды.")
-        return
+async def autoinvite_command(message: Message):
+    if not is_private(message): return
+    if message.from_user.id!=YOUR_ADMIN_ID: return
     await auto_invite_verified_users()
-    await message.answer("Рассылка приглашений завершена!")
+    await message.answer("Рассылка завершена.")
 
-# --- Запуск ---
-async def main():
-    await dp.start_polling(bot)
 
-if __name__ == '__main__':
-    asyncio.run(main())
+@dp.message(Command('clean'))
+async def clean_cmd(message: Message):
+    if message.from_user.id!=YOUR_ADMIN_ID: return
+    await message.answer("Запускаю авто-чистку...")
+    await auto_cleaner.main()
+    await message.answer("Auto-cleaner завершён.")
+
+# --- 7. Старт поллинга и backup-trigger ---
+if __name__=='__main__':
+    logger.info("🚀 Bot started")
+    asyncio.run(dp.start_polling(bot))
 
 
 """
