@@ -1,6 +1,4 @@
 # main.py
-from dotenv import load_dotenv
-load_dotenv()
 import os
 import sys
 import logging
@@ -53,7 +51,7 @@ TOKEN              = require_env('BOT_TOKEN')
 GOOGLE_CREDENTIALS = require_env('GOOGLE_CREDENTIALS')
 SPREADSHEET_NAME   = require_env('SPREADSHEET_NAME')
 
-# Чаты и админ
+# Чаты и админ с дефолтами
 DEFAULT_PRIVATE_CHAT_ID = -1002635314764
 DEFAULT_CHANNEL_ID      = -1002643399672
 DEFAULT_YOUR_ADMIN_ID   = 7796929428
@@ -118,18 +116,24 @@ def update_user_score(user_id: int, delta: int, reason: str):
             return new
     return None
 
-async def auto_invite_verified_users():
-    records = users_ws.get_all_records()
-    col_invited = get_col_idx_by_name(users_ws, 'invited')
-    for row_idx, rec in enumerate(records, start=2):
-        status = (rec.get('статус') or '').strip().lower()
-        invited = (rec.get('invited') or '').strip().lower()
-        if status == 'verified' and invited != 'yes':
-            link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
-            await bot.send_message(rec['ID'],
-                f"✅ Верификация пройдена! Вступайте: {link.invite_link}"
-            )
-            users_ws.update_cell(row_idx, col_invited, 'yes')
+# --- New: Отправка одноразовой ссылки с обработкой ошибок ---
+async def send_one_time_invite_to_user(user_id: int):
+    try:
+        link_obj = await bot.create_chat_invite_link(
+            chat_id=PRIVATE_CHAT_ID,
+            member_limit=1
+        )
+        invite = link_obj.invite_link
+        await bot.send_message(
+            user_id,
+            f"✅ Верификация пройдена! Вступайте: {invite}"
+        )
+    except Exception:
+        await bot.send_message(
+            user_id,
+            "⚠️ Не удалось создать ссылку. "
+            "Обратитесь к администратору @astanahunters — подключение платное."
+        )
 
 # --- 4. FSM для публикаций ---
 class PostStates(StatesGroup):
@@ -147,16 +151,12 @@ async def start_cmd(message: Message):
         return
     user = get_user_by_id(message.from_user.id)
     if user and user.get('статус', '').strip().lower() == 'verified':
-        link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
-        await message.answer("✅ Вы верифицированы! " + link.invite_link)
+        await send_one_time_invite_to_user(message.from_user.id)
     elif user:
         await message.answer("Ждите проверки.")
     else:
-        # создаём клавиатуру с кнопкой запроса контакта
         kb = ReplyKeyboardMarkup(
-            keyboard=[[
-                KeyboardButton(text="📲 Поделиться номером", request_contact=True)
-            ]],
+            keyboard=[[KeyboardButton(text="📲 Поделиться номером", request_contact=True)]],
             resize_keyboard=True,
             one_time_keyboard=True
         )
@@ -190,13 +190,12 @@ async def send_rules(message: Message):
 @dp.callback_query(F.data == "accept_rules")
 async def accept_rules(cb: types.CallbackQuery):
     await cb.message.edit_reply_markup(None)
-    link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
+    await send_one_time_invite_to_user(cb.from_user.id)
     row_idx = users_ws.find(str(cb.from_user.id)).row
     col_read = get_col_idx_by_name(users_ws, 'Ознакомился')
     col_inv  = get_col_idx_by_name(users_ws, 'invited')
     users_ws.update_cell(row_idx, col_read, 'yes')
     users_ws.update_cell(row_idx, col_inv,  'yes')
-    await cb.message.answer(f"✅ Добро пожаловать! {link.invite_link}")
 
 @dp.message(F.chat.id == PRIVATE_CHAT_ID)
 async def delete_in_private_chat(msg: Message):
@@ -254,11 +253,8 @@ async def approve_user(message: Message):
     uid = int(parts[1])
     row_idx = users_ws.find(str(uid)).row
     col_status  = get_col_idx_by_name(users_ws, 'статус')
-    col_invited = get_col_idx_by_name(users_ws, 'invited')
     users_ws.update_cell(row_idx, col_status, 'verified')
-    link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
-    users_ws.update_cell(row_idx, col_invited, 'yes')
-    await bot.send_message(uid, f"✅ Вы верифицированы! {link.invite_link}")
+    await send_one_time_invite_to_user(uid)
     await message.answer(f"Пользователь {uid} приглашён.")
 
 @dp.message(Command('autoinvite'))
@@ -271,8 +267,7 @@ async def autoinvite_command(message: Message):
 
 @dp.message(Command('clean'))
 async def clean_cmd(message: Message):
-    if message.from_user.id != YOUR_ADMIN_ID:
-        return
+    if message.from_user.id != YOUR_ADMIN_ID: return
     await message.answer("Запускаю авто-чистку...")
     await auto_cleaner.main()
     await message.answer("✅ Auto-cleaner завершён.")
