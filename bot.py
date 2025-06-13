@@ -111,27 +111,31 @@ async def delete_commands_in_group(message: Message):
 # --- Команды (отвечают только в ЛС) ---
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
-    if not is_private(message):
-        await message.answer("⚠️ Пожалуйста, используйте команды в ЛИЧНЫХ СООБЩЕНИЯХ с ботом.")
-        return
-    user = get_user_by_id(message.from_user.id)
-    if user:
-        if user['статус'].strip().lower() == 'verified':
-            await message.answer(
-                f'✅ Вы верифицированы! Вот ссылка для вступления в закрытый чат:\n{INVITE_LINK}'
-            )
+    print("start_cmd вызван")
+    await message.answer("Бот работает, функция start вызвана!")
+    try:
+        user = get_user_by_id(message.from_user.id)
+        await message.answer(f"user = {user}")
+        if user:
+            if user['статус'].strip().lower() == 'verified':
+                await message.answer(
+                    f'✅ Вы верифицированы! Вот ссылка для вступления в закрытый чат:\n{INVITE_LINK}'
+                )
+            else:
+                await message.answer('Вы уже отправили номер. Ожидайте проверки.')
         else:
-            await message.answer('Вы уже отправили номер. Ожидайте проверки.')
-    else:
-        reply_kb = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-        await message.answer(
-            'Добро пожаловать! Пожалуйста, подтвердите ваш рабочий телефон для доступа к чату.',
-            reply_markup=reply_kb
-        )
+            reply_kb = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await message.answer(
+                'Добро пожаловать! Пожалуйста, подтвердите ваш рабочий телефон для доступа к чату.',
+                reply_markup=reply_kb
+            )
+    except Exception as e:
+        await message.answer(f"Произошла ошибка: {e}")
+
 
 @dp.message(F.contact)
 async def process_contact(message: Message):
