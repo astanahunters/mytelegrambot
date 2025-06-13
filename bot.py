@@ -243,6 +243,13 @@ async def autoinvite_command(message: types.Message):
     await auto_invite_verified_users()
     await message.answer("Рассылка приглашений завершена!")
 
+
+@dp.message()
+async def echo_all(message: Message):
+    await message.answer(f"Получено: {message.text}")
+
+
+
 # --- Запуск ---
 async def main():
     await dp.start_polling(bot)
