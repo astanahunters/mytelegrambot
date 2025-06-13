@@ -33,6 +33,7 @@ BACKUP_DIR.mkdir(exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
+
 def require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -78,6 +79,7 @@ def get_user_by_id(user_id: int):
         if str(rec.get('ID')) == str(user_id): return rec
     return None
 
+
 def get_col(ws, name: str):
     hdrs = ws.row_values(1)
     for i, h in enumerate(hdrs, start=1):
@@ -111,6 +113,7 @@ class DealFSM(StatesGroup):
 class CommissionFSM(StatesGroup):
     post_forward = State()
     message      = State()
+
 
 def is_private(m: Message): return m.chat.type == 'private'
 
