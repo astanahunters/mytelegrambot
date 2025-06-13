@@ -28,7 +28,7 @@ GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "/etc/secrets/GOOGLE_C
 print(f"GOOGLE_CREDENTIALS = {GOOGLE_CREDENTIALS}")
 SPREADSHEET_NAME = 'astanahunters_template'
 PRIVATE_CHAT_ID = -1002635314764  # Закрытый чат
-CHANNEL_ID = -1000000000000       # <-- укажи сюда свой канал! (где публикуются посты)
+CHANNEL_ID = -1002643399672       # <-- сюда публикуются посты
 INVITE_LINK = "Теперь вход платный! Пишите админу ЛС @astanahunters"
 YOUR_ADMIN_ID = 7796929428
 
@@ -99,10 +99,26 @@ async def auto_invite_verified_users():
             except Exception as e:
                 logging.error(f"Ошибка при отправке приглашения {rec['ID']}: {e}")
 
-# --- Автоудаление чужих команд в группе/чате (видят только авторы) ---
+# --- Автоудаление команд и любых сообщений в группе/канале ---
 @dp.message(F.text.startswith('/'))
 async def delete_commands_in_group(message: Message):
-    if message.chat.type != 'private':
+    if not is_private(message):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+@dp.message(F.text)
+async def delete_messages_in_group(message: Message):
+    if not is_private(message):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+@dp.message(F.photo)
+async def delete_photos_in_group(message: Message):
+    if not is_private(message):
         try:
             await message.delete()
         except Exception:
@@ -111,11 +127,10 @@ async def delete_commands_in_group(message: Message):
 # --- Команды (отвечают только в ЛС) ---
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
-    print("start_cmd вызван")
-    await message.answer("Бот работает, функция start вызвана!")
+    if not is_private(message):
+        return
     try:
         user = get_user_by_id(message.from_user.id)
-        await message.answer(f"user = {user}")
         if user:
             if user['статус'].strip().lower() == 'verified':
                 await message.answer(
@@ -136,7 +151,6 @@ async def start_cmd(message: Message):
     except Exception as e:
         await message.answer(f"Произошла ошибка: {e}")
 
-
 @dp.message(F.contact)
 async def process_contact(message: Message):
     if not is_private(message):
@@ -146,9 +160,6 @@ async def process_contact(message: Message):
         contact.user_id, contact.first_name, contact.phone_number, 'waiting', 20, datetime.now().isoformat(), '', ''
     ])
     await message.answer('Спасибо, ваш номер отправлен на проверку администратору.')
-
-async def ask_post_info(message: Message):
-    await message.answer('Загрузите фото объекта:')
 
 @dp.message(Command('rules'))
 async def send_rules(message: types.Message):
@@ -170,19 +181,20 @@ async def process_accept_rules(callback: types.CallbackQuery):
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer("Спасибо! Вы ознакомились с правилами и получили доступ к чату.")
 
-# --- Только в личке — фото и публикация ---
+# --- Публикация фото объекта: только в ЛС! Публикуется в канал ---
 @dp.message(F.photo)
 async def handle_photo(message: Message):
     if not is_private(message):
-        await message.answer("Пожалуйста, отправьте объект в личные сообщения боту.")
         return
     user = get_user_by_id(message.from_user.id)
     if not user or user['статус'].strip().lower() != 'verified':
         await message.answer('Публикация доступна только верифицированным участникам.')
         return
     await message.answer('Введите короткое описание объекта (без номера и агентства):')
-    # После получения описания — публикуй в канал:
-    # await bot.send_photo(CHANNEL_ID, photo=message.photo[-1].file_id, caption="Описание") 
+    # Здесь можно реализовать FSM: ожидание следующего сообщения для публикации в канал
+
+    # Пример публикации фото в канал (раскомментируй после добавления FSM для описания):
+    # await bot.send_photo(CHANNEL_ID, photo=message.photo[-1].file_id, caption="Описание")
 
 @dp.message(Command('cabinet'))
 async def show_cabinet(message: Message):
@@ -243,20 +255,12 @@ async def autoinvite_command(message: types.Message):
     await auto_invite_verified_users()
     await message.answer("Рассылка приглашений завершена!")
 
-
-@dp.message()
-async def echo_all(message: Message):
-    await message.answer(f"Получено: {message.text}")
-
-
-
 # --- Запуск ---
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
-
 
 
 """
