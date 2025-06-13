@@ -54,12 +54,24 @@ def require_env(name: str) -> str:
 TOKEN              = require_env('BOT_TOKEN')
 GOOGLE_CREDENTIALS = require_env('GOOGLE_CREDENTIALS').strip()
 SPREADSHEET_NAME   = require_env('SPREADSHEET_NAME')
-PRIVATE_CHAT_ID    = int(require_env('PRIVATE_CHAT_ID'))
-CHANNEL_ID         = int(require_env('CHANNEL_ID'))
-YOUR_ADMIN_ID      = int(require_env('YOUR_ADMIN_ID'))
+
+# ID чатов и админа (берутся из ENV или используются дефолты)
+DEFAULT_PRIVATE_CHAT_ID = -1002635314764
+DEFAULT_CHANNEL_ID      = -1002643399672
+DEFAULT_YOUR_ADMIN_ID   = 7796929428
+
+PRIVATE_CHAT_ID = int(os.getenv('PRIVATE_CHAT_ID', str(DEFAULT_PRIVATE_CHAT_ID)))
+CHANNEL_ID      = int(os.getenv('CHANNEL_ID', str(DEFAULT_CHANNEL_ID)))
+YOUR_ADMIN_ID   = int(os.getenv('YOUR_ADMIN_ID', str(DEFAULT_YOUR_ADMIN_ID)))
+
 CONFIRM_TIMEOUT    = int(os.getenv('CONFIRM_TIMEOUT', '3600'))
 
 # Инициализация бота
+bot = Bot(
+    token=TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
+dp = Dispatcher(storage=MemoryStorage())
 bot = Bot(
     token=TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
