@@ -150,7 +150,7 @@ async def start_cmd(message: Message):
     user = get_user_by_id(message.from_user.id)
     if user and user.get('статус', '').strip().lower() == 'verified':
         link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
-        await message.answer(f"✅ Вы верифицированы! {link.invite_link}")
+        await message.answer("✅ Вы верифицированы! " + link.invite_link)
     elif user:
         await message.answer("Ждите проверки.")
     else:
