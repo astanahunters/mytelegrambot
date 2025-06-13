@@ -163,7 +163,23 @@ async def start_cmd(message: Message):
             link = await bot.create_chat_invite_link(
                 chat_id=PRIVATE_CHAT_ID, member_limit=1
             )
-            await message.answer(f"✅ Вы верифицированы!\n{link.invite_link}")
+            await message.answer(f"✅ Вы верифицированы!
+{link.invite_link}")
+        else:
+            await message.answer("Ждите проверки.")
+    else:
+        # создаём клавиатуру с одной кнопкой
+        kb = ReplyKeyboardMarkup(
+            keyboard=[[
+                KeyboardButton("📲 Поделиться номером", request_contact=True)
+            ]],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        await message.answer(
+            "Добро пожаловать! Поделитесь номером телефона:",
+            reply_markup=kb
+        )(f"✅ Вы верифицированы!\n{link.invite_link}")
         else:
             await message.answer("Ждите проверки.")
     else:
