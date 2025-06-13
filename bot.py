@@ -153,8 +153,11 @@ async def start_cmd(msg: Message):
             return
         await msg.answer("Ждите проверки.")
         return
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("📲 Поделиться номером", request_contact=True))
+    # создаём клавиатуру с запросом контакта
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📲 Поделиться номером", request_contact=True)]],
+        resize_keyboard=True
+    )
     await msg.answer("Добро пожаловать! Поделитесь номером телефона:", reply_markup=kb)
 
 # --- 9. /post with moderation ---
