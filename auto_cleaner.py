@@ -7,7 +7,8 @@ auto_cleaner.py
 ... старый код ...
 # === OLD BLOCK END ===
 """
-
+from dotenv import load_dotenv
+load_dotenv()
 import re, shutil, datetime, os, asyncio, contextlib
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
