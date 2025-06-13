@@ -150,21 +150,21 @@ async def start_cmd(message: Message):
     elif user:
         await message.answer("Ждите проверки.")
     else:
-                # создаём клавиатуру вручную без передачи аргументов в конструктор
-        kb = ReplyKeyboardMarkup()
-        kb.keyboard = [[KeyboardButton("📲 Поделиться номером", request_contact=True)]]
-        kb.resize_keyboard = True
-        kb.one_time_keyboard = True
+        # создаём клавиатуру с кнопкой запроса контакта
+        kb = ReplyKeyboardMarkup(
+            keyboard=[[
+                KeyboardButton(text="📲 Поделиться номером", request_contact=True)
+            ]],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
         await message.answer(
-            "Добро пожаловать! Поделитесь номером телефона:",
-            reply_markup=kb
-        )(
             "Добро пожаловать! Поделитесь номером телефона:",
             reply_markup=kb
         )
 
 @dp.message(F.content_type == 'contact')
-async def process_contact(message: Message):
+async def process_contact(message: Message):(message: Message):
     if not is_private(message):
         return
     c = message.contact
