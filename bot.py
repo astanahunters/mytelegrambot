@@ -42,7 +42,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Функции для безопасного чтения ENV
+# ENV loader
 def require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -52,26 +52,19 @@ def require_env(name: str) -> str:
 
 # Обязательные переменные окружения
 TOKEN              = require_env('BOT_TOKEN')
-GOOGLE_CREDENTIALS = require_env('GOOGLE_CREDENTIALS').strip()
+GOOGLE_CREDENTIALS = require_env('GOOGLE_CREDENTIALS')
 SPREADSHEET_NAME   = require_env('SPREADSHEET_NAME')
 
-# ID чатов и админа (берутся из ENV или используются дефолты)
+# Чаты и админ
 DEFAULT_PRIVATE_CHAT_ID = -1002635314764
 DEFAULT_CHANNEL_ID      = -1002643399672
 DEFAULT_YOUR_ADMIN_ID   = 7796929428
-
 PRIVATE_CHAT_ID = int(os.getenv('PRIVATE_CHAT_ID', str(DEFAULT_PRIVATE_CHAT_ID)))
 CHANNEL_ID      = int(os.getenv('CHANNEL_ID', str(DEFAULT_CHANNEL_ID)))
 YOUR_ADMIN_ID   = int(os.getenv('YOUR_ADMIN_ID', str(DEFAULT_YOUR_ADMIN_ID)))
-
-CONFIRM_TIMEOUT    = int(os.getenv('CONFIRM_TIMEOUT', '3600'))
+CONFIRM_TIMEOUT = int(os.getenv('CONFIRM_TIMEOUT', '3600'))
 
 # Инициализация бота
-bot = Bot(
-    token=TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
-dp = Dispatcher(storage=MemoryStorage())
 bot = Bot(
     token=TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -99,7 +92,6 @@ except Exception as e:
 
 # --- 3. Утилиты для работы с Google Sheets ---
 def get_user_by_id(user_id: int):
-    # Ищем по столбцу 'ID'
     for rec in users_ws.get_all_records():
         if str(rec.get('ID')) == str(user_id):
             return rec
@@ -135,11 +127,8 @@ async def auto_invite_verified_users():
         status = (rec.get('статус') or '').strip().lower()
         invited = (rec.get('invited') or '').strip().lower()
         if status == 'verified' and invited != 'yes':
-            link = await bot.create_chat_invite_link(
-                chat_id=PRIVATE_CHAT_ID, member_limit=1
-            )
-            await bot.send_message(
-                rec['ID'],
+            link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
+            await bot.send_message(rec['ID'],
                 f"✅ Верификация пройдена! Вступайте: {link.invite_link}"
             )
             users_ws.update_cell(row_idx, col_invited, 'yes')
@@ -156,35 +145,20 @@ def is_private(m: Message) -> bool:
 # --- 6. Хендлеры ---
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
-    if not is_private(message): return
+    if not is_private(message):
+        return
     user = get_user_by_id(message.from_user.id)
-    if user:
-        if user.get('статус', '').strip().lower() == 'verified':
-            link = await bot.create_chat_invite_link(
-                chat_id=PRIVATE_CHAT_ID, member_limit=1
-            )
-            await message.answer(f"✅ Вы верифицированы!
-{link.invite_link}")
-        else:
-            await message.answer("Ждите проверки.")
+    if user and user.get('статус', '').strip().lower() == 'verified':
+        link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
+        await message.answer(f"✅ Вы верифицированы! {link.invite_link}")
+    elif user:
+        await message.answer("Ждите проверки.")
     else:
-        # создаём клавиатуру с одной кнопкой
         kb = ReplyKeyboardMarkup(
-            keyboard=[[
-                KeyboardButton("📲 Поделиться номером", request_contact=True)
-            ]],
+            keyboard=[[KeyboardButton("📲 Поделиться номером", request_contact=True)]],
             resize_keyboard=True,
             one_time_keyboard=True
         )
-        await message.answer(
-            "Добро пожаловать! Поделитесь номером телефона:",
-            reply_markup=kb
-        )(f"✅ Вы верифицированы!\n{link.invite_link}")
-        else:
-            await message.answer("Ждите проверки.")
-    else:
-        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        kb.add(KeyboardButton("📲 Поделиться номером", request_contact=True))
         await message.answer(
             "Добро пожаловать! Поделитесь номером телефона:",
             reply_markup=kb
@@ -192,20 +166,14 @@ async def start_cmd(message: Message):
 
 @dp.message(F.content_type == 'contact')
 async def process_contact(message: Message):
-    if not is_private(message): return
+    if not is_private(message):
+        return
     c = message.contact
     fio = f"{c.first_name or ''} {c.last_name or ''}".strip()
-    # Добавляем запись: ID, ФИО, номер телефона, статус, баллы, дата регистрации, жалобы, invited, Ознакомился
     users_ws.append_row([
-        c.user_id,
-        fio,
-        c.phone_number,
-        'waiting',    # статус
-        0,            # баллы
-        datetime.utcnow().isoformat(),
-        '',           # жалобы
-        'no',         # invited
-        'no'          # Ознакомился
+        c.user_id, fio, c.phone_number,
+        'waiting', 0, datetime.utcnow().isoformat(),
+        '', 'no', 'no'
     ])
     await message.answer("Спасибо! Ваш номер отправлен на проверку.")
 
@@ -221,18 +189,13 @@ async def send_rules(message: Message):
 @dp.callback_query(F.data == "accept_rules")
 async def accept_rules(cb: types.CallbackQuery):
     await cb.message.edit_reply_markup(None)
-    link = await bot.create_chat_invite_link(
-        chat_id=PRIVATE_CHAT_ID, member_limit=1
-    )
-    # Обновляем invited и Ознакомился
+    link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
     row_idx = users_ws.find(str(cb.from_user.id)).row
-    col_invited = get_col_idx_by_name(users_ws, 'invited')
-    col_read    = get_col_idx_by_name(users_ws, 'Ознакомился')
+    col_read = get_col_idx_by_name(users_ws, 'Ознакомился')
+    col_inv  = get_col_idx_by_name(users_ws, 'invited')
     users_ws.update_cell(row_idx, col_read, 'yes')
-    users_ws.update_cell(row_idx, col_invited, 'yes')
-    await cb.message.answer(
-        f"✅ Спасибо! Добро пожаловать!\n{link.invite_link}"
-    )
+    users_ws.update_cell(row_idx, col_inv,  'yes')
+    await cb.message.answer(f"✅ Добро пожаловать! {link.invite_link}")
 
 @dp.message(F.chat.id == PRIVATE_CHAT_ID)
 async def delete_in_private_chat(msg: Message):
@@ -257,11 +220,7 @@ async def got_photo(message: Message, state: FSMContext):
 @dp.message(PostStates.waiting_desc)
 async def got_desc(message: Message, state: FSMContext):
     data = await state.get_data()
-    await bot.send_photo(
-        chat_id=CHANNEL_ID,
-        photo=data['photo'],
-        caption=message.text
-    )
+    await bot.send_photo(chat_id=CHANNEL_ID, photo=data['photo'], caption=message.text)
     posts_ws.append_row([message.from_user.id, message.text, datetime.utcnow().isoformat()])
     update_user_score(message.from_user.id, +10, 'post')
     await message.answer("✅ Объект опубликован.")
@@ -281,7 +240,6 @@ async def show_cabinet(message: Message):
         f"Баллы: <b>{bal}</b>\n"
         f"Статус: {status}\n"
     )
-    # Можно добавить жалобы и дату регистрации при необходимости
     await message.answer(text)
 
 @dp.message(Command('approve'))
@@ -297,11 +255,9 @@ async def approve_user(message: Message):
     col_status  = get_col_idx_by_name(users_ws, 'статус')
     col_invited = get_col_idx_by_name(users_ws, 'invited')
     users_ws.update_cell(row_idx, col_status, 'verified')
-    link = await bot.create_chat_invite_link(
-        chat_id=PRIVATE_CHAT_ID, member_limit=1
-    )
+    link = await bot.create_chat_invite_link(chat_id=PRIVATE_CHAT_ID, member_limit=1)
     users_ws.update_cell(row_idx, col_invited, 'yes')
-    await bot.send_message(uid, f"✅ Вы верифицированы!\n{link.invite_link}")
+    await bot.send_message(uid, f"✅ Вы верифицированы! {link.invite_link}")
     await message.answer(f"Пользователь {uid} приглашён.")
 
 @dp.message(Command('autoinvite'))
@@ -314,7 +270,8 @@ async def autoinvite_command(message: Message):
 
 @dp.message(Command('clean'))
 async def clean_cmd(message: Message):
-    if message.from_user.id != YOUR_ADMIN_ID: return
+    if message.from_user.id != YOUR_ADMIN_ID:
+        return
     await message.answer("Запускаю авто-чистку...")
     await auto_cleaner.main()
     await message.answer("✅ Auto-cleaner завершён.")
